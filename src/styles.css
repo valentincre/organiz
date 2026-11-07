@@ -1,0 +1,134 @@
+@import 'tailwindcss';
+
+/*
+ * Semantic colors, each as light-dark(light, dark): the browser picks the
+ * value from `color-scheme`, which follows the system unless the theme
+ * toggle sets data-theme on <html>. Components use `bg-surface`,
+ * `text-muted`… and never need `dark:` variants.
+ */
+:root {
+  color-scheme: light dark;
+  --bg: light-dark(#f6f7f9, #12151b);
+  --surface: light-dark(#ffffff, #1b2029);
+  --surface-muted: light-dark(#f0f2f5, #232a35);
+  --line: light-dark(#dde1e7, #323b48);
+  --text: light-dark(#1c2430, #e6e9ee);
+  --muted: light-dark(#5d6877, #9aa5b4);
+  --accent: light-dark(#3b5bdb, #6c8cff);
+  --accent-hover: light-dark(#2f4ac0, #8aa3ff);
+  --accent-soft: light-dark(#e7ecfd, #1f2847);
+  --on-accent: light-dark(#ffffff, #0d1220);
+  --success: light-dark(#2b8a3e, #69db7c);
+  --success-soft: light-dark(#e3f4e7, #1b3123);
+  --warning: light-dark(#b35c00, #ffa94d);
+  --danger: light-dark(#c92a2a, #ff8787);
+  --danger-soft: light-dark(#fdecec, #3a2024);
+  --today: light-dark(#fff5dc, #2c2719);
+
+  /* Option colors of custom properties: strong for dots and text, soft for chip backgrounds. */
+  --opt-blue: light-dark(#3b5bdb, #748ffc);
+  --opt-blue-soft: light-dark(#e7ecfd, #1f2847);
+  --opt-green: light-dark(#237032, #69db7c);
+  --opt-green-soft: light-dark(#e3f4e7, #1b3123);
+  --opt-amber: light-dark(#a35400, #ffa94d);
+  --opt-amber-soft: light-dark(#fff0dc, #3a2a15);
+  --opt-red: light-dark(#c92a2a, #ff8787);
+  --opt-red-soft: light-dark(#fdecec, #3a2024);
+  --opt-purple: light-dark(#6741d9, #b197fc);
+  --opt-purple-soft: light-dark(#efeafe, #2b2346);
+  --opt-teal: light-dark(#0b7285, #3bc9db);
+  --opt-teal-soft: light-dark(#e1f4f7, #14333a);
+  --opt-pink: light-dark(#c2255c, #f783ac);
+  --opt-pink-soft: light-dark(#fdebf2, #3a1d2a);
+  --opt-gray: light-dark(#5d6877, #adb5bd);
+  --opt-gray-soft: light-dark(#eceff3, #2a313c);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-today: var(--today);
+  --spacing-touch: 44px;
+  --color-opt-blue: var(--opt-blue);
+  --color-opt-blue-soft: var(--opt-blue-soft);
+  --color-opt-green: var(--opt-green);
+  --color-opt-green-soft: var(--opt-green-soft);
+  --color-opt-amber: var(--opt-amber);
+  --color-opt-amber-soft: var(--opt-amber-soft);
+  --color-opt-red: var(--opt-red);
+  --color-opt-red-soft: var(--opt-red-soft);
+  --color-opt-purple: var(--opt-purple);
+  --color-opt-purple-soft: var(--opt-purple-soft);
+  --color-opt-teal: var(--opt-teal);
+  --color-opt-teal-soft: var(--opt-teal-soft);
+  --color-opt-pink: var(--opt-pink);
+  --color-opt-pink-soft: var(--opt-pink-soft);
+  --color-opt-gray: var(--opt-gray);
+  --color-opt-gray-soft: var(--opt-gray-soft);
+
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply min-h-screen bg-bg text-text antialiased;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+}
+
+/*
+ * Selects: the browser's arrow sits against the right edge whatever the
+ * padding. It is replaced by Lucide's chevron, 10 px from the edge like the
+ * text on the left. Outside any layer so the right padding wins over the
+ * padding utilities. The chevron follows the theme like the muted text.
+ */
+:root {
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235d6877' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa5b4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+}
+
+:root[data-theme='dark'] {
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa5b4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+select:not([multiple]) {
+  appearance: none;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 0.625rem center;
+  background-size: 1rem;
+  padding-right: 2.25rem;
+}
+

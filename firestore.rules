@@ -1,0 +1,163 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // One encrypted document per dashboard. Knowing the random 128-bit id
+    // (shared through the link) is what grants access.
+    match /dashboards/{docId} {
+      allow get: if true;
+      allow list, delete: if false;
+
+      // On create, `proof` carries the proof of work.
+      allow create: if docId.size() == 22
+        && isValidEnvelopeV2(request.resource.data)
+        && request.resource.data.rev == 1
+        && hasProofOfWork(docId, request.resource.data.proof);
+
+      // `rev == old + 1` is the compare-and-swap: of two saves made from the same
+      // revision, only the first passes. The revealed proof must hash to the
+      // commitment stored by the previous save (lowercase hex SHA-256, see
+      // commitmentOf in src/storage/keys.ts), so only the edit-key holder writes.
+      allow update: if isValidEnvelopeV2(request.resource.data)
+        && request.resource.data.rev == resource.data.rev + 1
+        && hashing.sha256(request.resource.data.proof).toHexString().lower() == resource.data.next;
+    }
+
+    // A reply link's snapshot, written only by the organizer with the same
+    // proof chain as a dashboard; share proofs carry a `share:` prefix (see
+    // shareProofFor in src/storage/keys.ts), so a dashboard proof never opens one.
+    match /shares/{shareId} {
+      allow get: if true;
+      allow list, delete: if false;
+
+      // On create, `proof` carries the proof of work.
+      allow create: if shareId.size() == 22
+        && isValidShare(request.resource.data)
+        && request.resource.data.rev == 1
+        && request.resource.data.closed == false
+        && hasProofOfWork(shareId, request.resource.data.proof);
+
+      // Closing is final, and once its closing time has passed it stays put:
+      // otherwise the organizer could reopen a share behind its respondents.
+      allow update: if isValidShare(request.resource.data)
+        && request.resource.data.rev == resource.data.rev + 1
+        && hashing.sha256(request.resource.data.proof).toHexString().lower() == resource.data.next
+        && (resource.data.closed == false || request.resource.data.closed == true)
+        && (resource.data.closesAt == null
+          || request.time < resource.data.closesAt
+          || request.resource.data.closesAt == resource.data.closesAt);
+
+      // Respondents only ever create replies, while the share is open.
+      match /replies/{replyId} {
+        allow get: if true;
+        allow list: if request.query.limit <= 500;
+        allow update: if false;
+
+        allow create: if isValidReply(request.resource.data) && isOpenShare(shareId);
+
+        // A delete carries no data, so the organizer first writes `foldedUpTo`
+        // with the share's proof; afterwards deleting folded replies is harmless
+        // whoever does it.
+        allow delete: if isFoldedReply(shareId, resource.data);
+      }
+    }
+
+    // The hub of a dashboard's personal links, written only by the organizer
+    // with the same proof chain; hub proofs carry a `hub:` prefix (see
+    // hubProofFor in src/storage/keys.ts), so neither a dashboard proof nor a
+    // share proof with the same id ever opens one.
+    match /hubs/{hubId} {
+      allow get: if true;
+      allow list, delete: if false;
+
+      // On create, `proof` carries the proof of work.
+      allow create: if hubId.size() == 22
+        && isValidHub(request.resource.data)
+        && request.resource.data.rev == 1
+        && hasProofOfWork(hubId, request.resource.data.proof);
+
+      allow update: if isValidHub(request.resource.data)
+        && request.resource.data.rev == resource.data.rev + 1
+        && hashing.sha256(request.resource.data.proof).toHexString().lower() == resource.data.next;
+    }
+
+    function shareData(shareId) {
+      return get(/databases/$(database)/documents/shares/$(shareId)).data;
+    }
+
+    function isOpenShare(shareId) {
+      let share = shareData(shareId);
+      return share.closed == false
+        && (share.closesAt == null || request.time < share.closesAt);
+    }
+
+    function isFoldedReply(shareId, reply) {
+      let share = shareData(shareId);
+      return share.closed == true
+        && share.foldedUpTo != null
+        && reply.createdAt <= share.foldedUpTo;
+    }
+
+    // ct < 500,000 bytes = MAX_SHARE_CIPHERTEXT_BYTES in src/storage/shareCrypto.ts
+    function isValidShare(d) {
+      return d.keys().hasOnly(['v', 'iv', 'ct', 'closesAt', 'closed', 'foldedUpTo', 'rev', 'next', 'proof', 'updatedAt'])
+        && d.keys().hasAll(['v', 'iv', 'ct', 'closesAt', 'closed', 'foldedUpTo', 'rev', 'next', 'proof', 'updatedAt'])
+        && d.v == 1
+        && d.iv is string && d.iv.size() == 16
+        && d.ct is bytes && d.ct.size() > 0 && d.ct.size() < 500000
+        && (d.closesAt == null || d.closesAt is timestamp)
+        && d.closed is bool
+        && (d.foldedUpTo == null || d.foldedUpTo is timestamp)
+        && d.rev is int
+        && d.next is string && d.next.size() == 64
+        && d.proof is string && d.proof.size() > 0 && d.proof.size() <= 64
+        && d.updatedAt == request.time;
+    }
+
+    // ct < 500,000 bytes = MAX_HUB_CIPHERTEXT_BYTES in src/storage/hubCrypto.ts
+    function isValidHub(d) {
+      return d.keys().hasOnly(['v', 'iv', 'ct', 'rev', 'next', 'proof', 'updatedAt'])
+        && d.keys().hasAll(['v', 'iv', 'ct', 'rev', 'next', 'proof', 'updatedAt'])
+        && d.v == 1
+        && d.iv is string && d.iv.size() == 16
+        && d.ct is bytes && d.ct.size() > 0 && d.ct.size() < 500000
+        && d.rev is int
+        && d.next is string && d.next.size() == 64
+        && d.proof is string && d.proof.size() > 0 && d.proof.size() <= 64
+        && d.updatedAt == request.time;
+    }
+
+    // `epk` is only on private replies: the sender's ephemeral public key.
+    function isValidReply(d) {
+      return d.keys().hasOnly(['createdAt', 'iv', 'ct', 'epk'])
+        && d.keys().hasAll(['createdAt', 'iv', 'ct'])
+        && d.createdAt == request.time
+        && d.iv is string && d.iv.size() == 16
+        && d.ct is bytes && d.ct.size() > 0 && d.ct.size() <= 2000
+        && (!('epk' in d) || (d.epk is string && d.epk.size() <= 100));
+    }
+
+    function isValidEnvelopeV2(d) {
+      return d.keys().hasOnly(['v', 'iv', 'ct', 'rev', 'updatedAt', 'next', 'proof'])
+        && d.keys().hasAll(['v', 'iv', 'ct', 'rev', 'updatedAt', 'next', 'proof'])
+        && d.v == 2
+        && d.iv is string && d.iv.size() == 16
+        && d.ct is bytes && d.ct.size() > 0 && d.ct.size() < 900000
+        && d.rev is int
+        && d.updatedAt == request.time
+        && d.next is string && d.next.size() == 64
+        && d.proof is string && d.proof.size() > 0 && d.proof.size() <= 64;
+    }
+
+    // 4 hex zeros = POW_HEX_ZEROS in src/storage/pow.ts
+    function hasProofOfWork(docId, nonce) {
+      return nonce.size() <= 16
+        && hashing.sha256('organiz:' + docId + ':' + nonce).toHexString().lower().matches('^0{4}.*');
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

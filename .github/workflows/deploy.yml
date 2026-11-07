@@ -1,0 +1,99 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  # Redeploy without a code change, e.g. after changing a repository variable.
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    # A reusable workflow cannot request more than its caller grants.
+    permissions:
+      contents: read
+      pull-requests: read
+
+  deploy:
+    needs: ci
+    # Forks never deploy.
+    if: github.repository == 'valentincre/organiz'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      # Fail before any build or auth: an empty FIREBASE_HOSTING_SITE would
+      # silently deploy to the project's default hosting site.
+      - name: Check the repository variables
+        env:
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_SITE_URL: ${{ vars.VITE_SITE_URL }}
+          FIREBASE_HOSTING_SITE: ${{ vars.FIREBASE_HOSTING_SITE }}
+          GCP_WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+          GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+        run: |
+          missing=0
+          for name in VITE_FIREBASE_API_KEY VITE_FIREBASE_PROJECT_ID VITE_SITE_URL FIREBASE_HOSTING_SITE GCP_WIF_PROVIDER GCP_SERVICE_ACCOUNT; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Repository variable ${name} is not set"
+              missing=1
+            fi
+          done
+          exit "${missing}"
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      - name: Compute the next version
+        id: version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The dry run writes .next-version only when a release is due.
+          npx semantic-release --dry-run
+          if [ -f .next-version ]; then
+            VERSION="$(cat .next-version)"
+          else
+            VERSION="$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)"
+            VERSION="${VERSION:-0.0.0-dev}"
+          fi
+          echo "Version: ${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_APP_VERSION: ${{ steps.version.outputs.version }}
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_SITE_URL: ${{ vars.VITE_SITE_URL }}
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Deploy to Firebase
+        run: node scripts/deploy.mjs
+        env:
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          FIREBASE_HOSTING_SITE: ${{ vars.FIREBASE_HOSTING_SITE }}
+
+      # Runs only if the deploy succeeded. If main moved in the meantime,
+      # semantic-release skips the release and the next run includes it.
+      - name: Publish the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
