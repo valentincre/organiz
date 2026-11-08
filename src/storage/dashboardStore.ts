@@ -35,6 +35,10 @@ export const DEFAULT_SAVE_DELAY: SaveDelay = { idle: 1500, max: 5000 }
 /** A hidden tab stops listening after this long, so a forgotten tab costs no reads. */
 const DEFAULT_PAUSE_AFTER_MS = 5 * 60_000
 
+/** Re-reads of a possibly stale server revision after a denied write, with a growing delay (about 1.5 s in all). */
+const STALE_READ_RETRIES = 3
+const STALE_READ_DELAY_MS = 250
+
 export interface SessionOptions {
   saveDelay?: SaveDelay
   pauseAfterMs?: number
@@ -436,12 +440,26 @@ export class DashboardSession implements DashboardStore {
         return
       } catch (error) {
         if (!isPermissionDenied(error)) throw error
-        const snap = await getDocFromServer(this.docRef!)
-        const server = snap.exists() ? await readEnvelope(encKey, docId, snap.data()) : null
+        const server = await this.readTakenRevision(rev)
         // The revision was not taken by someone else: the write itself was refused.
-        if (!server || server.rev < rev) throw error
+        if (!server) throw error
         this.adopt(server.state, server.rev)
       }
+    }
+  }
+
+  /**
+   * The server revision after a denied write of `rev`, or null when it is still below `rev`. The
+   * denial can come before the read sees the winner's write, so the read is repeated for a short
+   * while before concluding that the write itself was refused.
+   */
+  private async readTakenRevision(rev: number): Promise<Revision | null> {
+    for (let attempt = 0; ; attempt++) {
+      const snap = await getDocFromServer(this.docRef!)
+      const server = snap.exists() ? await readEnvelope(this.keys!.encKey, this.ref.docId, snap.data()) : null
+      if (server && server.rev >= rev) return server
+      if (!server || attempt === STALE_READ_RETRIES) return null
+      await new Promise((resolve) => setTimeout(resolve, STALE_READ_DELAY_MS * (attempt + 1)))
     }
   }
 
