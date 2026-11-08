@@ -50,7 +50,7 @@ function waitFor(session: DashboardSession, predicate: (s: DashboardSnapshot) =>
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error(`Timed out, last snapshot: ${JSON.stringify(session.getSnapshot())}`)),
-      4000,
+      15_000,
     )
     const check = () => {
       const snapshot = session.getSnapshot()

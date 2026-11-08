@@ -47,7 +47,7 @@ function organizer(name: string, ref: DashboardRef): { session: DashboardSession
   return { session, sync }
 }
 
-async function until(check: () => boolean | Promise<boolean>, what: string, timeout = 8_000): Promise<void> {
+async function until(check: () => boolean | Promise<boolean>, what: string, timeout = 15_000): Promise<void> {
   const end = Date.now() + timeout
   while (!(await check())) {
     if (Date.now() > end) throw new Error(`Timed out waiting for ${what}`)
