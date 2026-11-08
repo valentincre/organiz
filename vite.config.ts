@@ -42,6 +42,8 @@ export default defineConfig(({ command, mode }) => {
             environment: 'node',
             // The emulator is shared, so these tests must not run in parallel.
             fileParallelism: false,
+            // CI runners are much slower than a laptop with a warm emulator.
+            testTimeout: 30_000,
           },
         },
       ],
